@@ -157,8 +157,8 @@ github.com/blacktear23/go-proxyprotocol v1.0.6 h1:eTt6UMpEnq59NjON49b3Cay8Dm0sCs
 github.com/blacktear23/go-proxyprotocol v1.0.6/go.mod h1:FSCbgnRZrQXazBLL5snfBbrcFSMtcmUDhSRb9OfFA1o=
 github.com/bmatcuk/doublestar/v2 v2.0.4 h1:6I6oUiT/sU27eE2OFcWqBhL1SwjyvQuOssxT4a1yidI=
 github.com/bmatcuk/doublestar/v2 v2.0.4/go.mod h1:QMmcs3H2AUQICWhfzLXz+IYln8lRQmTZRptLie8RgRw=
-github.com/bufferflies/client-go/v2 v2.0.0-20230921091957-9791ace8dab7 h1:krULFTM/9DszVaErs8bCoS+SSwKKaDg2s6nDowxhaQo=
-github.com/bufferflies/client-go/v2 v2.0.0-20230921091957-9791ace8dab7/go.mod h1:ArIf1ebIbAY50A/pNnFjBAmTrRSas5AO22G4YMTPE+g=
+github.com/bufferflies/client-go/v2 v2.0.0-20230726071354-76d6d93e9856 h1:KkfUfHKp4uYWVuhYGha6a1oUPi2uSpVCpTweQG/SJR4=
+github.com/bufferflies/client-go/v2 v2.0.0-20230726071354-76d6d93e9856/go.mod h1:J17iHkj8buCLDF7lgKJLX5jq5aGozrbpa7+Ln6g8Xjc=
 github.com/butuzov/mirror v1.1.0 h1:ZqX54gBVMXu78QLoiqdwpl2mgmoOJTk7s4p4o+0avZI=
 github.com/butuzov/mirror v1.1.0/go.mod h1:8Q0BdQU6rC6WILDiBM60DBfvV78OLJmMmixe7GF45AE=
 github.com/carlmjohnson/flagext v0.21.0 h1:/c4uK3ie786Z7caXLcIMvePNSSiH3bQVGDvmGLMme60=
