@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/docker/go-units"
 	"github.com/pingcap/errors"
@@ -68,6 +69,7 @@ import (
 	"github.com/pingcap/tidb/pkg/types"
 	"github.com/pingcap/tidb/pkg/util"
 	"github.com/pingcap/tidb/pkg/util/chunk"
+	"github.com/pingcap/tidb/pkg/util/codec"
 	"github.com/pingcap/tidb/pkg/util/collate"
 	contextutil "github.com/pingcap/tidb/pkg/util/context"
 	"github.com/pingcap/tidb/pkg/util/dbterror/exeerrors"
@@ -114,8 +116,9 @@ type ShowExec struct {
 	GlobalScope bool // GlobalScope is used by show variables
 	Extended    bool // Used for `show extended columns from ...`
 
-	ImportJobID *int64
-	SQLOrDigest string // Used for SHOW PLAN FOR <SQL or Digest>
+	ImportJobID       *int64
+	DistributionJobID *int64
+	SQLOrDigest       string // Used for SHOW PLAN FOR <SQL or Digest>
 }
 
 type showTableRegionRowItem struct {
@@ -287,6 +290,8 @@ func (e *ShowExec) fetchAll(ctx context.Context) error {
 		return e.fetchShowSessionStates(ctx)
 	case ast.ShowImportJobs:
 		return e.fetchShowImportJobs(ctx)
+	case ast.ShowDistributionJobs:
+		return e.fetchShowDistributionJobs(ctx)
 	}
 	return nil
 }
@@ -2141,7 +2146,8 @@ func (e *ShowExec) fetchShowDistributions(ctx context.Context) error {
 	distributions := make([]*pdHttp.RegionDistribution, 0)
 	var resp *pdHttp.RegionDistributions
 	for _, pid := range physicalIDs {
-		startKey, endKey := tablecodec.GetTableHandleKeyRange(pid)
+		startKey := codec.EncodeBytes([]byte{}, tablecodec.GenTablePrefix(pid))
+		endKey := codec.EncodeBytes([]byte{}, tablecodec.GenTablePrefix(pid+1))
 		// todo： support engine type
 		resp, err = infosync.GetRegionDistributionByKeyRange(ctx, startKey, endKey, "")
 		if err != nil {
@@ -2453,6 +2459,79 @@ func handleImportJobInfo(ctx context.Context, info *importer.JobInfo, result *ch
 	}
 	FillOneImportJobInfo(info, result, importedRowCount)
 	return nil
+}
+
+const balanceRangeScheduler = "balance-range-scheduler"
+
+func (e *ShowExec) fetchShowDistributionJobs(ctx context.Context) error {
+	jobs, err := infosync.GetSchedulerConfig(ctx, balanceRangeScheduler)
+	if err != nil {
+		return err
+	}
+	if e.DistributionJobID != nil {
+		for _, job := range jobs {
+			jobID, ok := job["job-id"].(float64)
+			if ok && *e.DistributionJobID == int64(jobID) {
+				fillDistributionJobToChunk(ctx, job, e.result)
+				break
+			}
+		}
+	} else {
+		for _, job := range jobs {
+			fillDistributionJobToChunk(ctx, job, e.result)
+		}
+	}
+	return nil
+}
+
+// fillDistributionJobToChunk fills the distribution job to the chunk
+func fillDistributionJobToChunk(ctx context.Context, job map[string]any, result *chunk.Chunk) {
+	// alias is combined by db_name,table_name,partition_name
+	alias := strings.Split(job["alias"].(string), ".")
+	logutil.Logger(ctx).Info("fillDistributionJobToChunk", zap.String("alias", job["alias"].(string)))
+	if len(alias) != 3 {
+		logutil.Logger(ctx).Debug("alias does not belong to tidb", zap.String("alias", job["alias"].(string)))
+		return
+	}
+	result.AppendUint64(0, uint64(job["job-id"].(float64)))
+	result.AppendString(1, alias[0])
+	result.AppendString(2, alias[1])
+	result.AppendString(3, alias[2])
+	result.AppendString(4, job["engine"].(string))
+	result.AppendString(5, job["rule"].(string))
+	result.AppendString(6, job["status"].(string))
+	layout := "2006-01-02T15:04:05.999999-07:00" // RFC3339 with microseconds
+	if create, ok := job["create"]; ok {
+		logutil.Logger(ctx).Info("fillDistributionJobToChunk", zap.String("create", create.(string)))
+		creatTime, err := time.Parse(layout, create.(string))
+		if err != nil {
+			logutil.Logger(ctx).Error("parse time failed", zap.String("time", job["start"].(string)))
+			return
+		}
+		result.AppendTime(7, types.NewTime(types.FromGoTime(creatTime), mysql.TypeDatetime, types.DefaultFsp))
+	} else {
+		result.AppendNull(7)
+	}
+	if create, ok := job["start"]; ok {
+		creatTime, err := time.Parse(layout, create.(string))
+		if err != nil {
+			logutil.Logger(ctx).Error("parse time failed", zap.String("time", job["start"].(string)))
+			return
+		}
+		result.AppendTime(8, types.NewTime(types.FromGoTime(creatTime), mysql.TypeDatetime, types.DefaultFsp))
+	} else {
+		result.AppendNull(8)
+	}
+	if create, ok := job["finish"]; ok {
+		creatTime, err := time.Parse(layout, create.(string))
+		if err != nil {
+			logutil.Logger(ctx).Error("parse time failed", zap.String("time", job["start"].(string)))
+			return
+		}
+		result.AppendTime(9, types.NewTime(types.FromGoTime(creatTime), mysql.TypeDatetime, types.DefaultFsp))
+	} else {
+		result.AppendNull(9)
+	}
 }
 
 // fetchShowImportJobs fills the result with the schema:

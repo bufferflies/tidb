@@ -86,3 +86,43 @@ func GetRegionDistributionByKeyRange(ctx context.Context, startKey []byte, endKe
 	}
 	return distributions, nil
 }
+
+// GetSchedulerConfig is used to get the configuration of the specified scheduler from PD.
+func GetSchedulerConfig(ctx context.Context, schedulerName string) ([]map[string]any, error) {
+	is, err := getGlobalInfoSyncer()
+	if err != nil {
+		return nil, err
+	}
+	if is.pdHTTPCli == nil {
+		return nil, errs.ErrClientGetLeader.FastGenByArgs(schedulerName)
+	}
+	config, err := is.pdHTTPCli.GetSchedulerConfig(ctx, schedulerName)
+	if err != nil {
+		return nil, err
+	}
+	configs, ok := config.([]any)
+	if !ok {
+		return nil, errs.ErrClientProtoUnmarshal.FastGenByArgs(config)
+	}
+	jobs := make([]map[string]any, 0, len(configs))
+	for _, c := range configs {
+		job, ok := c.(map[string]any)
+		if !ok {
+			return nil, errs.ErrClientProtoUnmarshal.FastGenByArgs(c)
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, err
+}
+
+// CreateSchedulerConfigWithInput is used to create a scheduler with the specified input.
+func CreateSchedulerConfigWithInput(ctx context.Context, schedulerName string, input map[string]any) error {
+	is, err := getGlobalInfoSyncer()
+	if err != nil {
+		return err
+	}
+	if is.pdHTTPCli == nil {
+		return errs.ErrClientGetLeader.FastGenByArgs(schedulerName)
+	}
+	return is.pdHTTPCli.CreateSchedulerWithInput(ctx, schedulerName, input)
+}

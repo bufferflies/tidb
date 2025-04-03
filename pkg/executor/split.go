@@ -585,6 +585,7 @@ func getPhysicalTableRegions(physicalTableID int64, tableInfo *model.TableInfo, 
 	}
 	// for record
 	startKey, endKey := tablecodec.GetTableHandleKeyRange(physicalTableID)
+	logutil.BgLogger().Info("Get phtsical table regions by key range ", zap.ByteString("startKey", startKey), zap.ByteString("endKey", endKey), zap.Int64("pid", physicalTableID))
 	regionCache := tikvStore.GetRegionCache()
 	recordRegionMetas, err := regionCache.LoadRegionsInKeyRange(tikv.NewBackofferWithVars(context.Background(), 20000, nil), startKey, endKey)
 	if err != nil {
