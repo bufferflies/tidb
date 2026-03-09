@@ -19,6 +19,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/pingcap/tidb/pkg/domain/infosync"
 	"github.com/pingcap/tidb/pkg/executor/internal/exec"
@@ -29,8 +30,9 @@ import (
 	"github.com/pingcap/tidb/pkg/tablecodec"
 	"github.com/pingcap/tidb/pkg/util/chunk"
 	"github.com/pingcap/tidb/pkg/util/codec"
-	"github.com/tikv/pd/client/errs"
+	"github.com/pingcap/tidb/pkg/util/logutil"
 	pdhttp "github.com/tikv/pd/client/http"
+	"go.uber.org/zap"
 )
 
 var schedulerName = "balance-range-scheduler"
@@ -74,21 +76,43 @@ func (e *DistributeTableExec) Next(ctx context.Context, chk *chunk.Chunk) error 
 	if err != nil {
 		return err
 	}
+	var jobID float64 = -1
+	for range 3 {
+		jobID = e.getSchedulerJob(ctx)
+		if jobID >= 0 {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if jobID != -1 {
+		chk.AppendUint64(0, uint64(jobID))
+	}
+	return nil
+}
+
+// getSchedulerJob retrieves the job ID of the scheduler for the current table.
+// if returns -1 means the scheduler job is not found.
+func (e *DistributeTableExec) getSchedulerJob(ctx context.Context) float64 {
+	// this request maybe sent to the scheduler microservice but this service maybe not watch the config update.
+	// So it can't get the latest config immediately. We need to retry a few times to get the job id.
 	config, err := infosync.GetSchedulerConfig(ctx, schedulerName)
+	if err != nil {
+		logutil.Logger(ctx).Warn("get scheduler config failed", zap.Error(err))
+		return -1
+	}
 	configs, ok := config.([]any)
 	if !ok {
-		return errs.ErrClientProtoUnmarshal.FastGenByArgs(config)
+		logutil.Logger(ctx).Warn("get empty scheduler config")
+		return -1
 	}
 	jobs := make([]map[string]any, 0, len(configs))
 	for _, cfg := range configs {
 		job, ok := cfg.(map[string]any)
 		if !ok {
-			return errs.ErrClientProtoUnmarshal.FastGenByArgs(cfg)
+			logutil.Logger(ctx).Warn("get invalid scheduler config", zap.Any("config", cfg))
+			return -1
 		}
 		jobs = append(jobs, job)
-	}
-	if err != nil {
-		return err
 	}
 	alias := e.getAlias()
 	jobID := float64(-1)
@@ -102,10 +126,7 @@ func (e *DistributeTableExec) Next(ctx context.Context, chk *chunk.Chunk) error 
 			}
 		}
 	}
-	if jobID != -1 {
-		chk.AppendUint64(0, uint64(jobID))
-	}
-	return nil
+	return jobID
 }
 
 func (e *DistributeTableExec) distributeTable(ctx context.Context) error {
