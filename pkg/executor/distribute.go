@@ -77,12 +77,22 @@ func (e *DistributeTableExec) Next(ctx context.Context, chk *chunk.Chunk) error 
 		return err
 	}
 	var jobID float64 = -1
-	for range 3 {
-		jobID = e.getSchedulerJob(ctx)
-		if jobID >= 0 {
+	for i := range 3 {
+		found, id := e.getSchedulerJob(ctx)
+		if found {
+			jobID = id
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
+		if i < 2 {
+			timer := time.NewTimer(500 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+				timer.Stop()
+			}
+		}
 	}
 	if jobID != -1 {
 		chk.AppendUint64(0, uint64(jobID))
@@ -92,25 +102,25 @@ func (e *DistributeTableExec) Next(ctx context.Context, chk *chunk.Chunk) error 
 
 // getSchedulerJob retrieves the job ID of the scheduler for the current table.
 // if returns -1 means the scheduler job is not found.
-func (e *DistributeTableExec) getSchedulerJob(ctx context.Context) float64 {
+func (e *DistributeTableExec) getSchedulerJob(ctx context.Context) (bool, float64) {
 	// this request maybe sent to the scheduler microservice but this service maybe not watch the config update.
 	// So it can't get the latest config immediately. We need to retry a few times to get the job id.
 	config, err := infosync.GetSchedulerConfig(ctx, schedulerName)
 	if err != nil {
-		logutil.Logger(ctx).Warn("get scheduler config failed", zap.Error(err))
-		return -1
+		logutil.Logger(ctx).Info("get scheduler config failed", zap.Error(err))
+		return false, -1
 	}
 	configs, ok := config.([]any)
 	if !ok {
-		logutil.Logger(ctx).Warn("get empty scheduler config")
-		return -1
+		logutil.Logger(ctx).Info("get empty scheduler config")
+		return false, -1
 	}
 	jobs := make([]map[string]any, 0, len(configs))
 	for _, cfg := range configs {
 		job, ok := cfg.(map[string]any)
 		if !ok {
-			logutil.Logger(ctx).Warn("get invalid scheduler config", zap.Any("config", cfg))
-			return -1
+			logutil.Logger(ctx).Info("get invalid scheduler config", zap.Any("config", cfg))
+			return false, -1
 		}
 		jobs = append(jobs, job)
 	}
@@ -126,7 +136,7 @@ func (e *DistributeTableExec) getSchedulerJob(ctx context.Context) float64 {
 			}
 		}
 	}
-	return jobID
+	return jobID > -1, jobID
 }
 
 func (e *DistributeTableExec) distributeTable(ctx context.Context) error {
