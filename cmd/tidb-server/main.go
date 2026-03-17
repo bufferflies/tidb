@@ -931,7 +931,8 @@ func setGlobalVars() {
 	}
 
 	atomic.StoreUint64(&transaction.CommitMaxBackoff, uint64(parseDuration(cfg.TiKVClient.CommitTimeout).Seconds()*1000))
-	tikv.SetRegionCacheTTLSec(int64(cfg.TiKVClient.RegionCacheTTL))
+	// tikv.SetRegionCacheTTLSec(int64(cfg.TiKVClient.RegionCacheTTL))
+	tikv.SetRegionCacheTTLWithJitter(0, 0)
 	domainutil.RepairInfo.SetRepairMode(cfg.RepairMode)
 	domainutil.RepairInfo.SetRepairTableList(cfg.RepairTableList)
 	executor.GlobalDiskUsageTracker.SetBytesLimit(cfg.TempStorageQuota)
